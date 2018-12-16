@@ -21,6 +21,8 @@ use warnings;
 use Data::Dumper;
 use constant { TRUE => 1, FALSE => 0 };
 use constant { VERSION => "0.0.1" };
+
+# Define a list of stages, to be used like an ADT.
 my $modeRunner = 0;
 use constant
 { STAGE_PRE_STATE => $modeRunner++ #0
@@ -33,6 +35,7 @@ use constant
 , STAGE_COMMENT_TO_EOL => $modeRunner++ #7
 , STAGE_COMMENT_TO_MARK => $modeRunner++ #8
 
+# Constant representing a bitmask of all stages combined
 , STAGE_MASK_ALL => 1<<$modeRunner - 1
 };
 
@@ -85,6 +88,10 @@ GetOptions
 
 usage() if($getopt->{'help'});
 
+# Build a list of @targets based on remaining @ARGV input,
+# such that targets matching directories get macro-expanded
+# as though they were instead a list of all .lsl files within
+# that directory.
 my @targets;
 while(my $target = shift @ARGV)
 { $target = escapeshellarg($target);
@@ -95,8 +102,11 @@ while(my $target = shift @ARGV)
   push @targets, glob $target;
 }
 
+# No targets on command line illicits usage.
 usage() if(!@targets);
 
+# Now for every pre-processed target, we check to see if that's really
+# a file, and then run the process subroutine on them one by one.
 my $exitStatus = 0;
 while(my $target = shift @targets)
 { if(!defined(-e $target) || !-e $target)
@@ -107,59 +117,102 @@ while(my $target = shift @targets)
   process($target);
 }
 
+# Accept a filename, and endeavor to reformat that.
+# Output strategy has not yet been decided upon.
 sub process
 { my $target = shift;
   my $input;
+
+  # Open the file into filehandle $input
   my $openStatus = open($input, "<", $target);
   if(!$openStatus)
   { print "Could not read file $target: @!\n";
     $exitStatus = 1;
     return;
   }
+
+  # Prepare a state machine tracker
   $stageStack =
   { base => STAGE_PRE_STATE
   , token => ''
   , commented => STAGE_COMMENT_NONE
   , quoted => FALSE
   };
+
+  # iterate over every line of the file
   while(my $line = <$input>)
   { my @chars = split '', $line;
+
+    # iterate over every character on every line
     while(my $char = shift(@chars))
-    { if($char =~ /[ \t]/)
+    { # If current character is whitespace, then process all buffered
+      # characters thus far as a token before re-running character loop.      
+      if($char =~ /[ \t]/)
       { tokenProcess();
         next;
       }
+
+      # Otherwise, add current character into buffer.
       $stageStack->{'token'} .= $char;
 # print Dumper(tokenAtomsHash($stageStack));
+
+      # If the current buffer matches a token valid in current state,
+      # then process it as such
       tokenProcess() if(tokenAtomsHash($stageStack)->{$stageStack->{'token'}});
+
+      # Otherwise, if current character is a newline, then clear the buffer.
       $stageStack->{'token'} = '' if($char=="\n");
     }
   }
   close($input);
 }
 
+# Try to process characters in our buffer as a token in the current state.
 sub tokenProcess
-{ my $token = $stageStack->{'token'};
+{ # Take copy of buffer, but pre-emptively clear real buffer.
+  my $token = $stageStack->{'token'};
   $stageStack->{'token'} = '';
+
+  # Skip processing if buffer is empty
   return if(!$token);
+
+  # Create a mask representing the current confluence of states
   my $mask = stageMask($stageStack);
+
+  # If we have any scenes where this token may be valid, enumerate them.
   if(my $scenes = $tokenAtoms->{$token})
   { foreach my $scene (@$scenes)
-    { if($scene->{'valid'} & $mask)
-      { $scene->{action}();
+    { # For each scene, test to see if that scene is valid in current state.
+      if($scene->{'valid'} & $mask)
+      { # If so, perform the action of that scene.
+        $scene->{action}();
 # print Dumper($stageStack) ."\n";
+        # And clear the character buffer as a consequence.
         $stageStack->{'token'} = '';
         return;
       }
     }
   }
 # print $stageStack->{'commented'} ."($token):";
-  return if($stageStack->{'commented'} ne STAGE_COMMENT_NONE);
+
+  # Don't complain about unexplained tokens while processing a comment,
+  # or a string literal.
+  return
+    if
+    ( $stageStack->{'commented'} ne STAGE_COMMENT_NONE
+    ||$stageStack->{'quoted'}
+    );
+
+  #Otherwise, we should only see tokens that we expect so complain.
   print
   ( "Found unexpected token: ($token) in mode/mask $mask\n"
   );
 }
 
+
+# This accepts a (potentially hypothetical) state machine,
+# and returns a hash keyed by every token for which the current
+# state may have valid scenes.
 sub tokenAtomsHash
 { my $mask = stageMask(shift());
   my $tokenAtomsHash;
@@ -174,6 +227,9 @@ sub tokenAtomsHash
   return $tokenAtomsHash;
 }
 
+# This accepts EITHER a hypothetical state OR an integer mode,
+# and returns a bitmask of either that mode or of all modes
+# within that state description or'ed together.
 sub stageMask
 { my $maskInput = shift;
   if(ref($maskInput) eq "HASH")
@@ -185,6 +241,8 @@ sub stageMask
   return 1<<$maskInput;
 }
 
+# This is used to ensure that user-specified file paths get interpreted
+# correctly by our file matching algorithm.
 sub escapeshellarg
 { my $arg = shift;
 
@@ -192,6 +250,8 @@ sub escapeshellarg
   return "'" . $arg . "'";
 }
 
+# If user invoked this command incorrectly, or if they asked for it,
+# then they are shown this page of help information and the program exits.
 sub usage
 { printf "elm-format-lsl.pl %s\n\n", VERSION;
   print <<~EOF;
