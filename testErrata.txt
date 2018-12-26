@@ -1,0 +1,20 @@
+sub MatchTest
+{ my $match = shift;
+  print "$match ";
+  if($match =~ /^$lexemeTemplates->{TypeCast}/)
+  { print "TRUE";
+  } else
+  { print "FALSE";
+  }
+  print "\n";
+}
+
+
+print Dumper($lexemeTemplates->{TypeCast});
+MatchTest("Hello");
+MatchTest("(integer)");
+MatchTest("(integerq)");
+MatchTest("(boolean)");
+MatchTest("Something (list) something");
+MatchTest("(list) something");
+MatchTest("(  string\n)");
