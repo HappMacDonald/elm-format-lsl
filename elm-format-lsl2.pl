@@ -6,6 +6,16 @@ use open qw(:std :utf8);
 use constant { TRUE => 1, FALSE => 0 };
 use constant { VERSION => "0.0.1" };
 
+=pod
+## Production notes
+
+OK, it is now confirmed that I am running into lexeme precidence problems.
+
+I want to work out the solution of a "pre" and a "post" list, such that lexemes
+are tested through the "pre" list in order first, then through all keys not in either list
+(the auto-generated "mid" list), then finally throught he "post" list in order.
+=cut
+
 my($symbols, $inputLine, $symbolIndex, $indent);
 my $inputRow = 0;
 my $inputColumn = 0;
@@ -36,7 +46,7 @@ my $lexemeTemplates =
   | [<>]=?
   | \|\|? #Bitwise and Logical
   | &&?
-  | ^
+  | \^
   | \<\<
   | >>
   )x
@@ -216,6 +226,15 @@ sub WriteSymbol
 sub ReadSymbol
 { while(!defined($symbols->[$symbolIndex]))
   {
+print Dumper
+( { label => "Before read"
+  , where => "($inputRow, $inputColumn)"
+  , remaining => $inputLine
+  , symbols => $symbols
+  , symbolIndex => $symbolIndex
+  }
+);
+
     if(!defined $inputLine || $inputLine eq '') # Blank at symbol read means end of line reached.
     { $inputRow++;
       $inputColumn = 0;
@@ -223,17 +242,27 @@ sub ReadSymbol
       return({ 'template' => 'EOF', symbolContent => '' })
         unless($inputLine); # Blank right after a file read means end of file reached.
     }
-    for my $template (keys %$lexemeTemplates)
-    { if($inputLine =~ s/(?<symbolContent>$lexemeTemplates->{$template})//)
+    for my $template (sort keys %$lexemeTemplates)
+    { if($inputLine =~ s/^(?<symbolContent>$lexemeTemplates->{$template})//)
       { my $symbol =
         { template => $template
         , content => $+{symbolContent}
         };
         push @$symbols, $symbol;
         $inputColumn += length $+{symbolContent};
+        last;
       }
     }
+print Dumper
+( { label => "After read"
+  , where => "($inputRow, $inputColumn)"
+  , remaining => $inputLine
+  , symbols => $symbols
+  , symbolIndex => $symbolIndex
   }
+);
+  }
+die;
   return $symbols->[$symbolIndex];
 }
 
@@ -254,14 +283,16 @@ sub TestTemplates
 
 
 sub ParseAccept
-{ return TestTemplates
-    ( shift
+{ my $testTemplates = shift;
+  return TestTemplates
+    ( $testTemplates
     , 'ParseAccept'
     , sub
       { my $symbol = ReadSymbol();
-        if($symbol->{template} eq shift )
+        my $template = shift;
+        if($symbol->{template} eq $template )
         { $symbolIndex++;
-          die(Dumper($symbol));
+          # die(Dumper($symbol));
           return([$symbol]);
         }
       }
@@ -269,8 +300,9 @@ sub ParseAccept
 }
 
 sub ParseExpect
-{ my $found = TestTemplates
-    ( shift
+{ my $testTemplates = shift;
+  my $found = TestTemplates
+    ( $testTemplates
     , 'ParseExpect'
     , sub
       { my $symbol = ParseAccept(shift);
@@ -284,7 +316,12 @@ sub ParseExpect
 
   return($found) if($found);
   my $symbol = ReadSymbol();
-  die("Unexpected $symbol->{template} Symbol '$symbol->{content}' found at  ($inputRow, $inputColumn).");
+  die
+  ( "Unexpected $symbol->{template} Symbol '$symbol->{content}' found at"
+  . " ($inputRow, $inputColumn). We were instead expecting one of: "
+  . Dumper($testTemplates)
+  ."\nRemaining line was $inputLine."
+  );
 }
 
 sub ParseIgnore
