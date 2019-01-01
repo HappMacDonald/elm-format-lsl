@@ -9,14 +9,11 @@ use constant { VERSION => "0.0.1" };
 =pod
 ## Production notes
 
-OK, it is now confirmed that I am running into lexeme precidence problems.
-
-I want to work out the solution of a "pre" and a "post" list, such that lexemes
-are tested through the "pre" list in order first, then through all keys not in either list
-(the auto-generated "mid" list), then finally throught he "post" list in order.
+OK, now it's getting stuck in a loop someplace. Need to debug.
 =cut
 
-my($symbols, $inputLine, $symbolIndex, $indent);
+my($symbols, $inputLine, $symbolIndex);
+my $indent = 0;
 my $inputRow = 0;
 my $inputColumn = 0;
 
@@ -34,6 +31,7 @@ my $lexemeTemplates =
 , BracketEnd => qr(\])
 , StatementEnd => qr(\;)
 , Comma => qr(,)
+, DoubleQuote => qr(")
 , Name => qr([a-zA-Z_][a-zA-Z_0-9]*)
 , UnaryOperators => qr(-|!|~)
 , IncrementDecrement => qr(--|\+\+)
@@ -68,6 +66,49 @@ $lexemeTemplates =
   )
 };
 
+# Lexemes will be checked in order, beginning with this list in this order.
+# So first item here will be first lexeme checked.
+my $lexemePreList =
+[ qw( Type
+      Whitespace
+  )
+];
+
+# Lexemes will be checked in order, ENDING with this list in this order.
+# So LAST item here will be last lexeme checked.
+my $lexemePostList =
+[ qw( Name
+  )
+];
+
+# Thus, this becomes the final ordering of all lexemes.
+my $lexemeOrderHash = {};
+
+#custom scope limiter
+{
+  my $index = 0;
+
+  foreach my $template (@$lexemePreList, keys %$lexemeTemplates)
+  { if(!defined $lexemeOrderHash->{$template})
+    {
+      $lexemeOrderHash->{$template} = $index++;
+    }
+  }
+  foreach my $template (@$lexemePostList)
+  { # Not skipping items already accounted for.
+    # Warning: this will swiss cheese the list a little bit,
+    # so your algos need to be tolerant of a swiss-cheese
+    # ordering.
+    $lexemeOrderHash->{$template} = $index++;
+  }
+}
+
+my $lexemeOrder = 
+[ sort
+    {$lexemeOrderHash->{$a} <=> $lexemeOrderHash->{$b}}
+    keys %$lexemeOrderHash
+];
+
 sub LexemeTemplate
 { my $template = shift;
   $template =~
@@ -93,7 +134,7 @@ sub ParseProgram
         ParseStatementEnd();
       }
     } else
-    { ParseExpect('Name');
+    { ParseExpect('Name', "Program header, user function returning void");
       ParseFunction();
     }
     IgnoreWhitespace();
@@ -108,22 +149,25 @@ die("DONE");
 
 sub ParseExpression
 { $symbolIndex = 0; # Forget lookahead
-  ParseExpect('Expression'); # TODO
+  ParseExpect('Expression', "TODO expression"); # TODO
 }
 
 sub ParseStatementEnd
 { $symbolIndex = 0; # Forget lookahead
-  ParseExpect('StatementEnd');
+  ParseExpect('StatementEnd', "End of a statement");
   WriteSymbol(''); # Just statement end
   WriteSymbol("\n"); # Just newline
 }
 
 sub ParseVariableDeclaration
 { $symbolIndex = 0; # Forget lookahead
-  ParseExpect('Name');
-  WriteSymbol(RenderIndent()); # indent + name
+  ParseExpect('Type', "Variable Declaration");
+  WriteSymbol(RenderIndent()); # indent + type
   IgnoreWhitespace();
-  ParseExpect('Assignment');
+  ParseExpect('Name', "Variable Declaration");
+  WriteSymbol(' '); # space + name
+  IgnoreWhitespace();
+  ParseExpect('Assignment', "Variable Declaration");
   WriteSymbol(' '); # space + assignment operator
   IgnoreWhitespace();
   WriteSymbol("\n"); # Just newline
@@ -147,13 +191,13 @@ sub ParseStatement
     { $symbolIndex = 0; # Forget lookahead
       return; # caller must end statement for us
     }
-    ParseExpect('ParenBegin');
+    ParseExpect('ParenBegin', "Return statement parenthesized value");
     WriteSymbol(''); # Just (
     ParseExpression();
-    ParseExpect('ParenEnd');
+    ParseExpect('ParenEnd', "Return statement parenthesized value");
     return; # caller must end statement for us
   }
-  ParseExpect('Statement'); # TODO
+  ParseExpect('Statement', "TODO Statement"); # TODO
 }
 
 sub ParseFunction
@@ -167,19 +211,19 @@ sub ParseFunction
   } else
   { WriteSymbol(RenderIndent()); # Just indent
   }
-  ParseExpect('Name');
+  ParseExpect('Name', "Function");
   WriteSymbol(''); # Just name
   IgnoreWhitespace();
-  ParseExpect('ParenBegin');
+  ParseExpect('ParenBegin', "Function");
   WriteSymbol(''); # Just ParenBegin
   IgnoreWhitespace();
   while(!ParseAccept('ParenEnd'))
-  { ParseExpect('Type');
+  { ParseExpect('Type', "Function argument");
     WriteSymbol(''); # Just type
     IgnoreWhitespace();
-    ParseExpect('Name');
+    ParseExpect('Name', "Function argument");
     WriteSymbol(' '); # space + name
-    my $symbol = ParseExpect('Comma', 'ParenEnd');
+    my $symbol = ParseExpect('Comma', 'ParenEnd', "more function arguments?");
     if($symbol->{template} eq 'Comma')
     { IgnoreWhitespace();
       WriteSymbol(''); # Just comma
@@ -190,7 +234,7 @@ sub ParseFunction
   }
   WriteSymbol(''); # Just ParenEnd
   IgnoreWhitespace();
-  ParseExpect('BlockBegin');
+  ParseExpect('BlockBegin', "Function block");
   WriteSymbol("\n" . RenderIndent()); # newline + indent + {
   $indent++;
   while(!ParseAccept('BlockEnd'))
@@ -205,7 +249,7 @@ sub ParseFunction
 sub ParseState
 { $symbolIndex = 0; # Forget lookahead
   # $indent must equal 0, so I'm never trying to render it here.
-  ParseExpect('State');
+  ParseExpect('State', "New State");
 }
 
 sub RenderIndent
@@ -226,14 +270,14 @@ sub WriteSymbol
 sub ReadSymbol
 { while(!defined($symbols->[$symbolIndex]))
   {
-print Dumper
-( { label => "Before read"
-  , where => "($inputRow, $inputColumn)"
-  , remaining => $inputLine
-  , symbols => $symbols
-  , symbolIndex => $symbolIndex
-  }
-);
+# print Dumper
+# ( { label => "Before read"
+#   , where => "($inputRow, $inputColumn)"
+#   , remaining => $inputLine
+#   , symbols => $symbols
+#   , symbolIndex => $symbolIndex
+#   }
+# );
 
     if(!defined $inputLine || $inputLine eq '') # Blank at symbol read means end of line reached.
     { $inputRow++;
@@ -242,7 +286,7 @@ print Dumper
       return({ 'template' => 'EOF', symbolContent => '' })
         unless($inputLine); # Blank right after a file read means end of file reached.
     }
-    for my $template (sort keys %$lexemeTemplates)
+    for my $template (@$lexemeOrder)
     { if($inputLine =~ s/^(?<symbolContent>$lexemeTemplates->{$template})//)
       { my $symbol =
         { template => $template
@@ -253,16 +297,16 @@ print Dumper
         last;
       }
     }
-print Dumper
-( { label => "After read"
-  , where => "($inputRow, $inputColumn)"
-  , remaining => $inputLine
-  , symbols => $symbols
-  , symbolIndex => $symbolIndex
+# print Dumper
+# ( { label => "After read"
+#   , where => "($inputRow, $inputColumn)"
+#   , remaining => $inputLine
+#   , symbols => $symbols
+#   , symbolIndex => $symbolIndex
+#   }
+# );
   }
-);
-  }
-die;
+# die;
   return $symbols->[$symbolIndex];
 }
 
@@ -288,7 +332,7 @@ sub ParseAccept
     ( $testTemplates
     , 'ParseAccept'
     , sub
-      { my $symbol = ReadSymbol();
+      { my $symbol = ReadSymbol($testTemplates);
         my $template = shift;
         if($symbol->{template} eq $template )
         { $symbolIndex++;
@@ -301,6 +345,7 @@ sub ParseAccept
 
 sub ParseExpect
 { my $testTemplates = shift;
+  my $label = shift;
   my $found = TestTemplates
     ( $testTemplates
     , 'ParseExpect'
@@ -314,11 +359,14 @@ sub ParseExpect
     || FALSE
     ;
 
-  return($found) if($found);
-  my $symbol = ReadSymbol();
+  if($found)
+  { return($found);
+  }
+  my $symbol = ReadSymbol($testTemplates);
   die
-  ( "Unexpected $symbol->{template} Symbol '$symbol->{content}' found at"
-  . " ($inputRow, $inputColumn). We were instead expecting one of: "
+  ( "Unexpected $symbol->{template} Symbol '$symbol->{content}' found at "
+  . "input ($inputRow, $inputColumn) during \"$label\"."
+  . " We were instead expecting one of: "
   . Dumper($testTemplates)
   ."\nRemaining line was $inputLine."
   );
@@ -332,10 +380,9 @@ sub ParseIgnore
   , sub
     { my $testTemplate = shift;
       if(ParseAccept($testTemplate))
-      { if($symbolIndex == 0)
+      { if($symbolIndex == 1)
         { shift @$symbols;
-        } else
-        { $symbolIndex++;
+          $symbolIndex = 0;
         }
         return ParseIgnore($testTemplate);
       }
@@ -344,7 +391,7 @@ sub ParseIgnore
 }
 
 sub IgnoreWhitespace
-{ ParseIgnore(['WhiteSpace']);
+{ ParseIgnore(['Whitespace']);
 }
 
 ParseProgram();
