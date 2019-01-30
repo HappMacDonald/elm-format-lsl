@@ -16,6 +16,7 @@ my($symbols, $inputLine, $symbolIndex);
 my $indent = 0;
 my $inputRow = 0;
 my $inputColumn = 0;
+my $breakflag = FALSE;
 
 my $lexemeTemplates =
 { CommentSingleLine => qr(\/\/)
@@ -125,24 +126,47 @@ sub ParseProgram
 { $symbolIndex = 0; # Forget lookahead
   IgnoreWhitespace();
   while(!ParseAccept('State'))
-  { if(ParseAccept('Type'))
-    { IgnoreWhitespace();
+  { 
+puts("A");
+    if(ParseAccept('Type'))
+    { 
+puts("B");
+      IgnoreWhitespace();
+puts("C");
       if(ParseAccept('ParenBegin'))
-      { ParseFunction();
+      { 
+puts("D");
+        ParseFunction();
       } else
-      { ParseVariableDeclaration();
+      { 
+puts("E");
+        ParseVariableDeclaration();
+puts("F");
         ParseStatementEnd();
+puts("I");
       }
     } else
-    { ParseExpect('Name', "Program header, user function returning void");
+    { 
+puts("G");
+      ParseExpect('Name', "Program header, user function returning void");
+puts("H");
       ParseFunction();
+puts("J");
     }
+puts("K");
     IgnoreWhitespace();
+puts("L");
   }
+puts("M");
   IgnoreWhitespace();
+puts("N");
   while(!ParseAccept('EOF'))
-  { ParseState();
+  { 
+puts("O");
+    ParseState();
+puts("P");
   }
+puts("Q");
   IgnoreWhitespace();
 die("DONE");
 }
@@ -161,19 +185,33 @@ sub ParseStatementEnd
 
 sub ParseVariableDeclaration
 { $symbolIndex = 0; # Forget lookahead
+puts("EA");
   ParseExpect('Type', "Variable Declaration");
+puts("EB");
   WriteSymbol(RenderIndent()); # indent + type
+puts("EB");
   IgnoreWhitespace();
+puts("EC");
   ParseExpect('Name', "Variable Declaration");
+puts("ED");
   WriteSymbol(' '); # space + name
+puts("EE");
   IgnoreWhitespace();
+puts("EF");
   ParseExpect('Assignment', "Variable Declaration");
+puts("EG");
   WriteSymbol(' '); # space + assignment operator
+puts("EH");
+$breakflag = TRUE;
   IgnoreWhitespace();
+puts("EI");
   WriteSymbol("\n"); # Just newline
+puts("EJ");
   ++$indent;
   WriteSymbol(RenderIndent()); # Just new indent
+puts("EK");
   ParseExpression(); # Consume expression
+puts("EL");
   --$indent;
   return; # caller must end statement for us
 }
@@ -256,6 +294,10 @@ sub RenderIndent
 { return("  " x $indent);
 }
 
+sub puts
+{ print "$_[0]\n";
+}
+
 sub WriteSymbol
 { my $whitespace = shift;
   die("WriteSymbol called while \$symbolIndex = $symbolIndex, instead of 0 or 1 as required.")
@@ -270,14 +312,14 @@ sub WriteSymbol
 sub ReadSymbol
 { while(!defined($symbols->[$symbolIndex]))
   {
-# print Dumper
-# ( { label => "Before read"
-#   , where => "($inputRow, $inputColumn)"
-#   , remaining => $inputLine
-#   , symbols => $symbols
-#   , symbolIndex => $symbolIndex
-#   }
-# );
+print Dumper
+( { label => "Before read"
+  , where => "($inputRow, $inputColumn)"
+  , remaining => $inputLine
+  , symbols => $symbols
+  , symbolIndex => $symbolIndex
+  }
+) if $breakflag;
 
     if(!defined $inputLine || $inputLine eq '') # Blank at symbol read means end of line reached.
     { $inputRow++;
@@ -297,16 +339,16 @@ sub ReadSymbol
         last;
       }
     }
-# print Dumper
-# ( { label => "After read"
-#   , where => "($inputRow, $inputColumn)"
-#   , remaining => $inputLine
-#   , symbols => $symbols
-#   , symbolIndex => $symbolIndex
-#   }
-# );
+print Dumper
+( { label => "After read"
+  , where => "($inputRow, $inputColumn)"
+  , remaining => $inputLine
+  , symbols => $symbols
+  , symbolIndex => $symbolIndex
   }
-# die;
+) if $breakflag;
+  }
+# die if $breakflag;
   return $symbols->[$symbolIndex];
 }
 
@@ -328,17 +370,23 @@ sub TestTemplates
 
 sub ParseAccept
 { my $testTemplates = shift;
+puts("EHABA");
   return TestTemplates
     ( $testTemplates
     , 'ParseAccept'
     , sub
-      { my $symbol = ReadSymbol($testTemplates);
+      { 
+puts("EHABB");
+        my $symbol = ReadSymbol($testTemplates);
+puts("EHABC");
         my $template = shift;
         if($symbol->{template} eq $template )
         { $symbolIndex++;
           # die(Dumper($symbol));
+puts("EHABD");
           return([$symbol]);
         }
+puts("EHABE");
       }
     );
 }
@@ -374,13 +422,17 @@ sub ParseExpect
 
 sub ParseIgnore
 { $symbolIndex = $symbolIndex || 0;
+puts("EHAA");
   TestTemplates
   ( shift
   , 'ParseIgnore'
   , sub
     { my $testTemplate = shift;
+puts("EHAB");
       if(ParseAccept($testTemplate))
-      { if($symbolIndex == 1)
+      { 
+puts("EHAC");
+        if($symbolIndex == 1)
         { shift @$symbols;
           $symbolIndex = 0;
         }
@@ -391,7 +443,10 @@ sub ParseIgnore
 }
 
 sub IgnoreWhitespace
-{ ParseIgnore(['Whitespace']);
+{ 
+puts("EHA");
+  ParseIgnore(['Whitespace']);
+puts("EHB");
 }
 
 ParseProgram();
