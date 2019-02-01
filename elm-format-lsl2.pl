@@ -9,7 +9,8 @@ use constant { VERSION => "0.0.1" };
 =pod
 ## Production notes
 
-OK, now it's getting stuck in a loop someplace. Need to debug.
+OK, now I have to define how Expressions work. :S
+That sounds HAAAARD xD
 =cut
 
 my($symbols, $inputLine, $symbolIndex);
@@ -33,6 +34,7 @@ my $lexemeTemplates =
 , StatementEnd => qr(\;)
 , Comma => qr(,)
 , DoubleQuote => qr(")
+, NumberLiteral => qr([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)
 , Name => qr([a-zA-Z_][a-zA-Z_0-9]*)
 , UnaryOperators => qr(-|!|~)
 , IncrementDecrement => qr(--|\+\+)
@@ -127,46 +129,46 @@ sub ParseProgram
   IgnoreWhitespace();
   while(!ParseAccept('State'))
   { 
-puts("A");
+# puts("A");
     if(ParseAccept('Type'))
     { 
-puts("B");
+# puts("B");
       IgnoreWhitespace();
-puts("C");
+# puts("C");
       if(ParseAccept('ParenBegin'))
       { 
-puts("D");
+# puts("D");
         ParseFunction();
       } else
       { 
-puts("E");
+# puts("E");
         ParseVariableDeclaration();
-puts("F");
+# puts("F");
         ParseStatementEnd();
-puts("I");
+# puts("I");
       }
     } else
     { 
-puts("G");
+# puts("G");
       ParseExpect('Name', "Program header, user function returning void");
-puts("H");
+# puts("H");
       ParseFunction();
-puts("J");
+# puts("J");
     }
-puts("K");
+# puts("K");
     IgnoreWhitespace();
-puts("L");
+# puts("L");
   }
-puts("M");
+# puts("M");
   IgnoreWhitespace();
-puts("N");
+# puts("N");
   while(!ParseAccept('EOF'))
   { 
-puts("O");
+# puts("O");
     ParseState();
-puts("P");
+# puts("P");
   }
-puts("Q");
+# puts("Q");
   IgnoreWhitespace();
 die("DONE");
 }
@@ -185,33 +187,33 @@ sub ParseStatementEnd
 
 sub ParseVariableDeclaration
 { $symbolIndex = 0; # Forget lookahead
-puts("EA");
+# puts("EA");
   ParseExpect('Type', "Variable Declaration");
-puts("EB");
+# puts("EB");
   WriteSymbol(RenderIndent()); # indent + type
-puts("EB");
+# puts("EB");
   IgnoreWhitespace();
-puts("EC");
+# puts("EC");
   ParseExpect('Name', "Variable Declaration");
-puts("ED");
+# puts("ED");
   WriteSymbol(' '); # space + name
-puts("EE");
+# puts("EE");
   IgnoreWhitespace();
-puts("EF");
+# puts("EF");
   ParseExpect('Assignment', "Variable Declaration");
-puts("EG");
+# puts("EG");
   WriteSymbol(' '); # space + assignment operator
-puts("EH");
-$breakflag = TRUE;
+# puts("EH");
+# $breakflag = TRUE;
   IgnoreWhitespace();
-puts("EI");
+# puts("EI");
   WriteSymbol("\n"); # Just newline
-puts("EJ");
+# puts("EJ");
   ++$indent;
   WriteSymbol(RenderIndent()); # Just new indent
-puts("EK");
+# puts("EK");
   ParseExpression(); # Consume expression
-puts("EL");
+# puts("EL");
   --$indent;
   return; # caller must end statement for us
 }
@@ -312,14 +314,14 @@ sub WriteSymbol
 sub ReadSymbol
 { while(!defined($symbols->[$symbolIndex]))
   {
-print Dumper
-( { label => "Before read"
-  , where => "($inputRow, $inputColumn)"
-  , remaining => $inputLine
-  , symbols => $symbols
-  , symbolIndex => $symbolIndex
-  }
-) if $breakflag;
+# print Dumper
+# ( { label => "Before read"
+#   , where => "($inputRow, $inputColumn)"
+#   , remaining => $inputLine
+#   , symbols => $symbols
+#   , symbolIndex => $symbolIndex
+#   }
+# ) if $breakflag;
 
     if(!defined $inputLine || $inputLine eq '') # Blank at symbol read means end of line reached.
     { $inputRow++;
@@ -328,9 +330,12 @@ print Dumper
       return({ 'template' => 'EOF', symbolContent => '' })
         unless($inputLine); # Blank right after a file read means end of file reached.
     }
+    my $symbol =
+      FALSE;
+
     for my $template (@$lexemeOrder)
     { if($inputLine =~ s/^(?<symbolContent>$lexemeTemplates->{$template})//)
-      { my $symbol =
+      { $symbol =
         { template => $template
         , content => $+{symbolContent}
         };
@@ -338,15 +343,24 @@ print Dumper
         $inputColumn += length $+{symbolContent};
         last;
       }
+      # if($template eq 'NumberLiteral') {die($lexemeTemplates->{$template});}
     }
-print Dumper
-( { label => "After read"
-  , where => "($inputRow, $inputColumn)"
-  , remaining => $inputLine
-  , symbols => $symbols
-  , symbolIndex => $symbolIndex
-  }
-) if $breakflag;
+    die
+    ( "Unkown input found at "
+    . "input ($inputRow, $inputColumn) during \"ReadSymbol\"."
+    . "\nRemaining line was"
+    . ":\n$inputLine"
+    ) unless $symbol;
+
+    
+# print Dumper
+# ( { label => "After read"
+#   , where => "($inputRow, $inputColumn)"
+#   , remaining => $inputLine
+#   , symbols => $symbols
+#   , symbolIndex => $symbolIndex
+#   }
+# ) if $breakflag;
   }
 # die if $breakflag;
   return $symbols->[$symbolIndex];
@@ -370,23 +384,23 @@ sub TestTemplates
 
 sub ParseAccept
 { my $testTemplates = shift;
-puts("EHABA");
+# puts("EHABA");
   return TestTemplates
     ( $testTemplates
     , 'ParseAccept'
     , sub
       { 
-puts("EHABB");
+# puts("EHABB");
         my $symbol = ReadSymbol($testTemplates);
-puts("EHABC");
+# puts("EHABC");
         my $template = shift;
         if($symbol->{template} eq $template )
         { $symbolIndex++;
           # die(Dumper($symbol));
-puts("EHABD");
+# puts("EHABD");
           return([$symbol]);
         }
-puts("EHABE");
+# puts("EHABE");
       }
     );
 }
@@ -416,22 +430,23 @@ sub ParseExpect
   . "input ($inputRow, $inputColumn) during \"$label\"."
   . " We were instead expecting one of: "
   . Dumper($testTemplates)
-  ."\nRemaining line was $inputLine."
+  . "\nRemaining line was"
+  . ":\n$inputLine"
   );
 }
 
 sub ParseIgnore
 { $symbolIndex = $symbolIndex || 0;
-puts("EHAA");
+# puts("EHAA");
   TestTemplates
   ( shift
   , 'ParseIgnore'
   , sub
     { my $testTemplate = shift;
-puts("EHAB");
+# puts("EHAB");
       if(ParseAccept($testTemplate))
       { 
-puts("EHAC");
+# puts("EHAC");
         if($symbolIndex == 1)
         { shift @$symbols;
           $symbolIndex = 0;
@@ -444,9 +459,9 @@ puts("EHAC");
 
 sub IgnoreWhitespace
 { 
-puts("EHA");
+# puts("EHA");
   ParseIgnore(['Whitespace']);
-puts("EHB");
+# puts("EHB");
 }
 
 ParseProgram();
